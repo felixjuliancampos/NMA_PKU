@@ -1,0 +1,219 @@
+############################################################
+# Network Meta-Analysis of PKU Interventions
+# Author: Felix Julian Campos Garcia
+# Date: 2026 - april - 13
+# Description: Script for conducting a frequentist NMA using netmeta
+############################################################
+
+## =======================
+## 1. Setup
+## =======================
+
+# Install required packages if not already installed
+required_packages <- c("readxl", "netmeta", "writexl")
+
+installed <- rownames(installed.packages())
+for (p in required_packages) {
+  if (!(p %in% installed)) install.packages(p)
+}
+
+# Load libraries
+library(readxl)
+library(netmeta)
+library(writexl)
+
+# Set seed for reproducibility
+set.seed(100)
+
+## =======================
+## 2. Load Data
+## =======================
+
+# Use relative path (important for GitHub reproducibility)
+data_path <- "data/NMA_PKU.xlsx"
+
+NMA_data <- as.data.frame(read_xlsx(data_path))
+
+# Inspect structure
+str(NMA_data)
+
+## =======================
+## 3. Network Structure
+## =======================
+
+NMA_struct <- netconnection(
+  treat1,
+  treat2,
+  studlab = study,
+  data = NMA_data
+)
+
+print(NMA_struct)
+
+## =======================
+## 4. Network Meta-Analysis Model
+## =======================
+
+NMA_models <- netmeta(
+  TE,
+  seTE,
+  treat1,
+  treat2,
+  studlab = study,
+  data = NMA_data,
+  sm = "MD",
+  reference.group = "phe restrict diet",
+  random = TRUE,
+  common = FALSE,
+  method.tau = "REML"
+)
+
+print(NMA_models)
+
+## =======================
+## 5. Network Visualization
+## =======================
+
+cols <- c(
+  "red", "orange", "blue", "lightblue",
+  "green", "darkgreen", "brown",
+  "purple", "grey"
+)
+
+netgraph(
+  NMA_models,
+  number.of.studies = TRUE,
+  thickness = "number.of.studies",
+  points = TRUE,
+  cex.points = rep(6, length(NMA_models$trts)),
+  col.points = cols
+)
+
+## =======================
+## 6. League Table
+## =======================
+
+output_league <- "outputs/NMA_netleague.xlsx"
+
+dir.create("outputs", showWarnings = FALSE)
+
+NMA_netleague <- netleague(
+  NMA_models,
+  digits = 2
+)
+
+write_xlsx(NMA_netleague, path = output_league)
+
+## =======================
+## 7. Forest Plot
+## =======================
+
+NMA_forest <- forest(
+  NMA_models,
+  pooled = "random",
+  sortvar = TE,
+  drop.reference.group = FALSE,
+  reference.group = "phe restrict diet",
+  digits = 2,
+  overall.hetstat = TRUE,
+  leftlabs = "PKU Interventions vs Phe Restriction Diet",
+  smlab = "Random-effects model",
+  label.left = "Favours Intervention",
+  label.right = "Favours Comparator",
+  fs.lr = 6,
+  fs.axis = 6,
+  col.square = "steelblue",
+  col.square.lines = "steelblue"
+)
+
+## =======================
+## 8. Inconsistency Assessment
+## =======================
+
+# SIDE (local inconsistency)
+NMA_SIDE <- netsplit(
+  NMA_models,
+  method = "Back-calculation",
+  reference.group = "phe restrict diet",
+  digits = 2,
+  sm = "MD"
+)
+
+print(NMA_SIDE)
+
+# SIDDE (global inconsistency)
+NMA_SIDDE <- netsplit(
+  NMA_models,
+  method = "SIDDE",
+  reference.group = "phe restrict diet",
+  digits = 2,
+  sm = "MD",
+  verbose = TRUE
+)
+
+print(NMA_SIDDE)
+
+## =======================
+## 9. Netsplit Forest Plot
+## =======================
+
+keep <- NMA_SIDE$comparison %in% c(
+  "sapropterin + diet:phe restrict diet",
+  "sepiapterin + diet:phe restrict diet",
+  "sapropterin + diet:sepiapterin + diet"
+)
+
+forest(
+  NMA_SIDE,
+  subset = keep,
+  show = "all",
+  overall = TRUE,
+  prediction = TRUE,
+  fontsize = 8,
+  spacing = 0.75
+)
+
+## =======================
+## 10. Treatment Ranking
+## =======================
+
+# SUCRA
+NMA_SUCRA <- netrank(
+  NMA_models,
+  method = "SUCRA",
+  random = TRUE,
+  nsim = 100,
+  small.values = "desirable"
+)
+
+print(NMA_SUCRA)
+
+# Rankogram (non-cumulative)
+plot(
+  rankogram(
+    NMA_models,
+    common = FALSE,
+    random = TRUE,
+    small.values = "desirable",
+    cumulative.rankprob = FALSE,
+    nsim = 100
+  ),
+  ylim = c(0, 1)
+)
+
+# Rankogram (cumulative)
+plot(
+  rankogram(
+    NMA_models,
+    common = FALSE,
+    random = TRUE,
+    small.values = "undesirable",
+    cumulative.rankprob = TRUE,
+    nsim = 100
+  ),
+  ylim = c(0, 1)
+)
+
+############################################################
+# End of script
+############################################################
